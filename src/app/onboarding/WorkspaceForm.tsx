@@ -26,7 +26,7 @@ export default function WorkspaceForm() {
         setError(result.error);
         return;
       }
-      router.push("/dashboard");
+      router.push("/dashboard/overview");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");

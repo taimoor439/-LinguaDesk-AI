@@ -23,7 +23,7 @@ export default async function OnboardingPage() {
 
   const workspaces = await getUserWorkspaces();
   if (workspaces.length > 0) {
-    redirect("/dashboard");
+    redirect("/dashboard/overview");
   }
 
   return (

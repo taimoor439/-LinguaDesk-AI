@@ -33,7 +33,7 @@ type NavEntry = {
 const NAV: NavEntry[] = [
   {
     key: "overview",
-    href: "/dashboard",
+    href: "/dashboard/overview",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l9-8 9 8M5 10v10h5v-6h4v6h5V10" />
@@ -161,12 +161,14 @@ export default function Sidebar({
   const current = workspaces.find((workspace) => workspace.id === currentId);
 
   const isActive = (href: string) =>
-    href === "/dashboard" ? pathname === "/dashboard" : pathname === href || pathname.startsWith(`${href}/`);
+    href === "/dashboard/overview"
+      ? pathname === "/dashboard/overview"
+      : pathname === href || pathname.startsWith(`${href}/`);
 
   const content = (
     <div className="flex h-full flex-col bg-navy-950 text-white">
       <div className="flex items-center justify-between px-5 pt-5">
-        <Link href="/dashboard" onClick={onClose} className="flex items-center gap-2" aria-label="LinguaDesk AI dashboard">
+        <Link href="/dashboard/overview" onClick={onClose} className="flex items-center gap-2" aria-label="LinguaDesk AI dashboard">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-500 text-lg font-bold text-white" aria-hidden="true">
             L
           </span>

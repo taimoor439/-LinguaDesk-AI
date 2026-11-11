@@ -8,6 +8,7 @@ import {
   assignConversation,
   addConversationMessage,
 } from "@/lib/actions";
+import { generateAiDraft, summarizeConversation } from "@/lib/ai-actions";
 
 const STATUSES = ["open", "pending", "resolved"] as const;
 
@@ -147,6 +148,7 @@ function MessageForm({
   placeholder,
   submitLabel,
   successMessage,
+  channel,
 }: {
   conversationId: string;
   kind: "reply" | "note";
@@ -155,6 +157,8 @@ function MessageForm({
   placeholder: string;
   submitLabel: string;
   successMessage: string;
+  /** "email" when this is an email conversation — the reply may be sent via the provider. */
+  channel?: string;
 }) {
   const router = useRouter();
   const [body, setBody] = useState("");
@@ -175,7 +179,17 @@ function MessageForm({
       return;
     }
     setBody("");
-    setSaved(successMessage);
+    // Phase 5: an email reply reports honestly whether the provider
+    // actually sent it — never claim a send that did not happen.
+    if (kind === "reply" && channel === "email" && result.data) {
+      setSaved(
+        result.data.sentVia
+          ? `Sent via ${result.data.sentVia === "gmail" ? "Gmail" : "Microsoft"}.`
+          : "Saved to thread — not sent (no email provider connected, or the send failed).",
+      );
+    } else {
+      setSaved(successMessage);
+    }
     router.refresh();
   };
 
@@ -208,17 +222,33 @@ function MessageForm({
   );
 }
 
-/** Agent reply — saved to the thread, not sent to the customer yet. */
-export function ReplyForm({ conversationId }: { conversationId: string }) {
+/** Agent reply — sent via the connected email provider for email conversations, otherwise saved to the thread only. */
+export function ReplyForm({
+  conversationId,
+  channel,
+}: {
+  conversationId: string;
+  channel?: string;
+}) {
+  const isEmail = channel === "email";
   return (
     <MessageForm
       conversationId={conversationId}
       kind="reply"
+      channel={channel}
       title="Reply"
-      description="Saved to this thread in LinguaDesk. It is not sent to the customer yet — sending channels (chat widget, email) arrive in later phases."
+      description={
+        isEmail
+          ? "If a Gmail or Microsoft account is connected, this reply is sent by email. Otherwise it is saved to the thread only — the result below says which happened."
+          : "The visitor sees this reply in the chat widget the next time it checks for new messages (it polls while open)."
+      }
       placeholder="Write your reply to the customer…"
-      submitLabel="Save reply"
-      successMessage="Reply saved to the thread."
+      submitLabel="Send reply"
+      successMessage={
+        isEmail
+          ? "Reply saved to the thread."
+          : "Reply saved — the visitor will see it in the chat widget."
+      }
     />
   );
 }
@@ -235,5 +265,94 @@ export function NoteForm({ conversationId }: { conversationId: string }) {
       submitLabel="Save note"
       successMessage="Internal note saved."
     />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — AI actions (generate draft, summarize)
+// ---------------------------------------------------------------------------
+
+/**
+ * AI tools for one conversation. Both buttons are disabled with an
+ * explanatory note while the OpenAI key is missing — the actions
+ * themselves fail with the same honest error, so the UI can never
+ * pretend AI ran.
+ */
+export function AiActions({
+  conversationId,
+  aiConfigured,
+}: {
+  conversationId: string;
+  aiConfigured: boolean;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<"draft" | "summary" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+
+  const runDraft = async () => {
+    setBusy("draft");
+    setError(null);
+    setSaved(null);
+    const result = await generateAiDraft(conversationId);
+    setBusy(null);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setSaved("AI draft saved to the thread — review it below before approving.");
+    router.refresh();
+  };
+
+  const runSummary = async () => {
+    setBusy("summary");
+    setError(null);
+    setSaved(null);
+    const result = await summarizeConversation(conversationId);
+    setBusy(null);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setSaved("AI summary saved as an internal note in the thread.");
+    router.refresh();
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 className="text-lg font-medium">AI Assistant</h2>
+      <p className="mt-1 text-sm text-gray-500">
+        Drafts are grounded in your published knowledge-base articles and
+        always need a human&apos;s approval before they are used. Summaries
+        are saved as internal notes, labelled AI-generated.
+      </p>
+      {!aiConfigured ? (
+        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          AI is not configured — add your OpenAI API key to enable AI
+          drafting and summaries.
+        </p>
+      ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          onClick={runDraft}
+          loading={busy === "draft"}
+          disabled={!aiConfigured || busy !== null}
+        >
+          Generate AI draft
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={runSummary}
+          loading={busy === "summary"}
+          disabled={!aiConfigured || busy !== null}
+        >
+          Summarize
+        </Button>
+      </div>
+      <ErrorNote message={error} />
+      <SuccessNote message={saved} />
+    </div>
   );
 }

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import SetupRequired from "@/components/SetupRequired";
 import { Card, Badge, EmptyState } from "@/components/ui";
@@ -5,11 +6,26 @@ import {
   getCurrentWorkspaceId,
   getWidgetConfig,
   getConversations,
+  getChatNeedsAttention,
 } from "@/lib/db";
+import { WidgetConfigForm } from "./WidgetConfigForm";
+import { InstallSnippet } from "./InstallSnippet";
 
 function formatTime(value: string | null): string {
   if (!value) return "—";
   return new Date(value).toLocaleString();
+}
+
+function conversationLabel(conversation: {
+  contacts: { name: string | null; email: string | null } | null;
+  subject: string | null;
+}): string {
+  return (
+    conversation.contacts?.name ??
+    conversation.contacts?.email ??
+    conversation.subject ??
+    "Unknown contact"
+  );
 }
 
 export default async function LiveChatPage() {
@@ -27,35 +43,41 @@ export default async function LiveChatPage() {
     );
   }
 
-  const [{ data: widget }, { data: chats }] = await Promise.all([
+  const [
+    { data: widget },
+    { data: chats },
+    { data: attention },
+  ] = await Promise.all([
     getWidgetConfig(workspaceId),
     getConversations(workspaceId, { channel: "chat", limit: 50 }),
+    getChatNeedsAttention(workspaceId),
   ]);
+
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "");
+  const scriptSrc = appUrl
+    ? `${appUrl}/api/widget.js`
+    : "/api/widget.js";
+  const snippet = `<script src="${scriptSrc}" data-workspace="${workspaceId}"></script>`;
+
+  const attentionItems = [
+    ...attention.handoffs.map((c) => ({ conversation: c, reason: "Handoff requested" })),
+    ...attention.unassigned
+      .filter((c) => !attention.handoffs.some((h) => h.id === c.id))
+      .map((c) => ({ conversation: c, reason: "Unassigned open chat" })),
+  ];
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Website Live Chat</h1>
       <p className="text-sm text-gray-500">
         The embeddable chat widget lets visitors on your website start a
-        conversation with your team or the AI assistant.
+        conversation with your team. Agent replies you save in the inbox
+        reach the visitor in the widget on its next poll.
       </p>
 
       <Card className="p-4">
         <h2 className="text-lg font-medium">Widget configuration</h2>
-        {!widget ? (
-          <div className="mt-4">
-            <EmptyState
-              title="No widget configured yet"
-              description="Set up your chat widget in Settings to start receiving website chats."
-            />
-            <a
-              href="/dashboard/settings"
-              className="mt-3 inline-block rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700"
-            >
-              Go to Settings
-            </a>
-          </div>
-        ) : (
+        {widget && (
           <dl className="mt-4 space-y-2 text-sm">
             <div className="flex gap-2">
               <dt className="w-40 text-gray-500">Name</dt>
@@ -87,7 +109,67 @@ export default async function LiveChatPage() {
               <dt className="w-40 text-gray-500">Collects email</dt>
               <dd>{widget.collect_email ? "Yes" : "No"}</dd>
             </div>
+            <div className="flex gap-2">
+              <dt className="w-40 text-gray-500">Greeting message</dt>
+              <dd>{widget.greeting_message ?? "—"}</dd>
+            </div>
           </dl>
+        )}
+        {!widget && (
+          <p className="mt-3 text-sm text-gray-500">
+            No widget configured yet. Save the settings below to create one —
+            the install snippet starts working once it exists.
+          </p>
+        )}
+        <WidgetConfigForm widget={widget} />
+      </Card>
+
+      <Card className="p-4">
+        <h2 className="text-lg font-medium">Install snippet</h2>
+        <InstallSnippet
+          snippet={snippet}
+          hasConfig={Boolean(widget)}
+          appUrlConfigured={Boolean(appUrl)}
+        />
+      </Card>
+
+      <Card className="p-4">
+        <h2 className="text-lg font-medium">Needs attention</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Visitors who asked for a human agent, and open chats with nobody
+          assigned. Open one to reply or assign it to a teammate.
+        </p>
+        {attentionItems.length === 0 ? (
+          <div className="mt-4">
+            <EmptyState
+              title="Nothing needs attention"
+              description="No handoff requests and no unassigned open chats right now."
+            />
+          </div>
+        ) : (
+          <ul className="mt-4 divide-y divide-gray-100">
+            {attentionItems.map(({ conversation, reason }) => (
+              <li key={conversation.id} className="py-3">
+                <Link
+                  href={`/dashboard/inbox/${conversation.id}`}
+                  className="flex flex-wrap items-center gap-2 hover:underline"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">
+                      {conversationLabel(conversation)}
+                    </span>
+                    <span className="block truncate text-sm text-gray-500">
+                      {reason} · {formatTime(conversation.last_message_at ?? conversation.created_at)}
+                    </span>
+                  </span>
+                  <span className="ml-auto flex flex-wrap items-center gap-2">
+                    <Badge>{conversation.status}</Badge>
+                    <Badge>{conversation.priority}</Badge>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         )}
       </Card>
 
@@ -103,24 +185,27 @@ export default async function LiveChatPage() {
         ) : (
           <ul className="mt-4 divide-y divide-gray-100">
             {chats.map((conversation) => (
-              <li key={conversation.id} className="flex flex-wrap items-center gap-2 py-3">
-                <div className="min-w-0">
-                  <p className="truncate font-medium">
-                    {conversation.contacts?.name ??
-                      conversation.contacts?.email ??
-                      "Unknown contact"}
-                  </p>
-                  <p className="truncate text-sm text-gray-500">
-                    {conversation.subject ?? "Untitled conversation"}
-                  </p>
-                </div>
-                <span className="ml-auto flex flex-wrap items-center gap-2">
-                  <Badge>{conversation.status}</Badge>
-                  <Badge>{conversation.priority}</Badge>
-                  <span className="text-sm text-gray-500">
-                    {formatTime(conversation.last_message_at ?? conversation.created_at)}
+              <li key={conversation.id} className="py-3">
+                <Link
+                  href={`/dashboard/inbox/${conversation.id}`}
+                  className="flex flex-wrap items-center gap-2 hover:underline"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">
+                      {conversationLabel(conversation)}
+                    </span>
+                    <span className="block truncate text-sm text-gray-500">
+                      {conversation.subject ?? "Untitled conversation"}
+                    </span>
                   </span>
-                </span>
+                  <span className="ml-auto flex flex-wrap items-center gap-2">
+                    <Badge>{conversation.status}</Badge>
+                    <Badge>{conversation.priority}</Badge>
+                    <span className="text-sm text-gray-500">
+                      {formatTime(conversation.last_message_at ?? conversation.created_at)}
+                    </span>
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>

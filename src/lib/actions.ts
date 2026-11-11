@@ -6,6 +6,8 @@ import {
   getCurrentWorkspaceId,
   getCurrentUserRole,
 } from "@/lib/db";
+import { SupabaseEmailStore } from "@/lib/email/store";
+import { sendEmailReply } from "@/lib/email/send";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 /**
@@ -18,8 +20,10 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
  * - runs through the anon client so Row Level Security still applies,
  * - never throws — failures are returned as `{ error }`,
  * - never invents data or claims a message was sent to a customer
- *   (sending channels arrive in Phases 3 and 5; replies are only
- *   saved to the thread here).
+ *   when it was only saved: chat replies reach the visitor through
+ *   the widget poll (Phase 3), email replies are sent via the
+ *   connected provider when one exists and otherwise degrade to
+ *   saved-only (Phase 5).
  */
 
 export type ActionResult<T = null> = { data: T | null; error: string | null };
@@ -38,14 +42,18 @@ function fail<T>(error: string): ActionResult<T> {
   return { data: null, error };
 }
 
-interface WorkspaceContext {
+export interface WorkspaceContext {
   user: User;
   workspaceId: string;
   role: string;
 }
 
-/** Resolve the caller + workspace, or return the error. */
-async function requireWorkspace(): Promise<
+/**
+ * Resolve the caller + workspace, or return the error. Exported so the
+ * Phase 4 action modules (AI, knowledge base) share the same
+ * membership check instead of re-implementing it.
+ */
+export async function requireWorkspace(): Promise<
   { context: WorkspaceContext; error: null } | { context: null; error: string }
 > {
   const supabase = await createClient();
@@ -149,11 +157,20 @@ export async function assignConversation(
   return ok(null);
 }
 
+export interface ReplyResult {
+  /** Provider the reply was actually sent through, or null when it was only saved. */
+  sentVia: string | null;
+  /** Provider message id when the provider returned one (proof of send). */
+  providerMessageId: string | null;
+  /** True when the reply was saved to the thread but NOT sent. */
+  savedOnly: boolean;
+}
+
 export async function addConversationMessage(
   conversationId: string,
   body: string,
   kind: "reply" | "note",
-): Promise<ActionResult> {
+): Promise<ActionResult<ReplyResult>> {
   const text = body.trim();
   if (!text) return fail("Write a message first.");
   if (text.length > 10000) return fail("Message is too long (max 10,000 characters).");
@@ -165,23 +182,24 @@ export async function addConversationMessage(
   const supabase = await createClient();
   const { data: conversation } = await supabase
     .from("conversations")
-    .select("id, language")
+    .select("id, language, channel")
     .eq("workspace_id", context.workspaceId)
     .eq("id", conversationId)
     .maybeSingle();
   if (!conversation) return fail("Conversation not found in this workspace.");
+  const conv = conversation as { language: string; channel: string };
 
   // Replies are agent messages saved to the thread. Internal notes are
   // stored with sender_type "system" so they are clearly agent-only.
-  const { error: insertError } = await supabase.from("messages").insert({
+  const { data: inserted, error: insertError } = await supabase.from("messages").insert({
     conversation_id: conversationId,
     workspace_id: context.workspaceId,
     sender_type: kind === "reply" ? "agent" : "system",
     sender_id: context.user.id,
     body: text,
-    language: (conversation as { language: string }).language ?? "en",
+    language: conv.language ?? "en",
     is_ai_draft: false,
-  });
+  }).select("id").single();
   if (insertError) return fail(insertError.message);
 
   // A reply is the newest customer-visible activity; an internal note
@@ -197,7 +215,41 @@ export async function addConversationMessage(
   revalidatePath("/dashboard/inbox");
   revalidatePath(`/dashboard/inbox/${conversationId}`);
   revalidatePath("/dashboard/overview");
-  return ok(null);
+
+  // Phase 5 (e): for email conversations, try to SEND the reply via
+  // the connected provider. The reply is already saved above, so a
+  // send failure (or no connected account) degrades honestly to
+  // saved-only — the UI reports "Saved to thread — not sent" and
+  // never claims it went out.
+  if (kind === "reply" && conv.channel === "email") {
+    const store = new SupabaseEmailStore(supabase);
+    let sendResult: { sent: boolean; sentVia: string | null; providerMessageId: string | null };
+    try {
+      sendResult = await sendEmailReply(store, context.workspaceId, conversationId, text);
+    } catch {
+      sendResult = { sent: false, sentVia: null, providerMessageId: null };
+    }
+    if (sendResult.sent) {
+      // Store the provider's message id as proof of send. The update
+      // is best-effort: before migration 0005 is applied the column
+      // does not exist, and the send itself still happened.
+      if (sendResult.providerMessageId && inserted) {
+        await store.updateMessageProviderId(
+          (inserted as { id: string }).id,
+          context.workspaceId,
+          sendResult.providerMessageId,
+        );
+      }
+      return ok({
+        sentVia: sendResult.sentVia,
+        providerMessageId: sendResult.providerMessageId,
+        savedOnly: false,
+      });
+    }
+    return ok({ sentVia: null, providerMessageId: null, savedOnly: true });
+  }
+
+  return ok({ sentVia: null, providerMessageId: null, savedOnly: kind === "reply" });
 }
 
 // ---------------------------------------------------------------------------
@@ -515,5 +567,76 @@ export async function revokeInvitation(invitationId: string): Promise<ActionResu
   if (!data) return fail("Pending invitation not found in this workspace.");
 
   revalidatePath("/dashboard/team");
+  return ok(null);
+}
+
+// ---------------------------------------------------------------------------
+// Widget config (Phase 3 — Website Live Chat)
+// ---------------------------------------------------------------------------
+
+export interface WidgetConfigInput {
+  name: string | null;
+  welcome_message: string | null;
+  brand_color: string;
+  position: string;
+  collect_name: boolean;
+  collect_email: boolean;
+  greeting_message: string | null;
+}
+
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const WIDGET_POSITIONS = ["bottom-right", "bottom-left"] as const;
+
+function validateWidgetConfigInput(input: WidgetConfigInput): string | null {
+  if (!HEX_COLOR_RE.test(input.brand_color)) {
+    return "Brand colour must be a hex colour, e.g. #0D9488.";
+  }
+  if (!(WIDGET_POSITIONS as readonly string[]).includes(input.position)) {
+    return "Position must be bottom-right or bottom-left.";
+  }
+  if (typeof input.collect_name !== "boolean" || typeof input.collect_email !== "boolean") {
+    return "Collect name/email must be true or false.";
+  }
+  if (input.name && input.name.length > 200) return "Widget name is too long.";
+  if (input.welcome_message && input.welcome_message.length > 500) {
+    return "Welcome message is too long.";
+  }
+  if (input.greeting_message && input.greeting_message.length > 500) {
+    return "Greeting message is too long.";
+  }
+  return null;
+}
+
+/**
+ * Create or update the current workspace's widget config (one row per
+ * workspace — upsert on workspace_id). Any workspace member may edit
+ * it; the public widget only reads it.
+ */
+export async function upsertWidgetConfig(
+  input: WidgetConfigInput,
+): Promise<ActionResult> {
+  const validationError = validateWidgetConfigInput(input);
+  if (validationError) return fail(validationError);
+
+  const { context, error } = await requireWorkspace();
+  if (!context) return fail(error);
+
+  const supabase = await createClient();
+  const { error: upsertError } = await supabase.from("widget_configs").upsert(
+    {
+      workspace_id: context.workspaceId,
+      name: input.name?.trim() || null,
+      welcome_message: input.welcome_message?.trim() || null,
+      brand_color: input.brand_color,
+      position: input.position,
+      collect_name: input.collect_name,
+      collect_email: input.collect_email,
+      greeting_message: input.greeting_message?.trim() || null,
+    },
+    { onConflict: "workspace_id" },
+  );
+  if (upsertError) return fail(upsertError.message);
+
+  revalidatePath("/dashboard/live-chat");
   return ok(null);
 }

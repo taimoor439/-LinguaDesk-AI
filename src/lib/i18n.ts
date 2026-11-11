@@ -77,7 +77,45 @@ export type DictionaryKey =
   | "priority"
   | "assignedTo"
   | "backToInbox"
-  | "backToContacts";
+  | "backToContacts"
+  | "widgetConfig"
+  | "installSnippet"
+  | "needsAttention"
+  | "widgetName"
+  | "welcomeMessage"
+  | "brandColor"
+  | "widgetPosition"
+  | "collectName"
+  | "collectEmail"
+  | "greetingMessage"
+  | "copySnippet"
+  | "copied"
+  | "saveWidgetConfig"
+  | "talkToHuman"
+  | "generateAiDraft"
+  | "summarize"
+  | "approve"
+  | "discard"
+  | "translate"
+  | "saveAsNewDraft"
+  | "aiNotConfigured"
+  | "newArticle"
+  | "newCategory"
+  | "publish"
+  | "unpublish"
+  | "articleContent"
+  | "articleCategory"
+  | "aiDraft"
+  | "translateTo"
+  | "aiSummary"
+  | "connectGmail"
+  | "connectMicrosoft"
+  | "disconnectAccount"
+  | "syncNow"
+  | "emailNotConfigured"
+  | "emailEncryptionNotConfigured"
+  | "emailSentVia"
+  | "emailSavedNotSent";
 
 export type Dictionary = Record<DictionaryKey, string>;
 
@@ -120,6 +158,44 @@ export const DICTIONARIES: Record<Locale, Dictionary> = {
     assignedTo: "Assigned to",
     backToInbox: "Back to inbox",
     backToContacts: "Back to contacts",
+    widgetConfig: "Widget configuration",
+    installSnippet: "Install snippet",
+    needsAttention: "Needs attention",
+    widgetName: "Widget name",
+    welcomeMessage: "Welcome message",
+    brandColor: "Brand colour",
+    widgetPosition: "Position",
+    collectName: "Collect visitor name",
+    collectEmail: "Collect visitor email",
+    greetingMessage: "Greeting message",
+    copySnippet: "Copy snippet",
+    copied: "Copied",
+    saveWidgetConfig: "Save widget settings",
+        talkToHuman: "Talk to a human",
+    generateAiDraft: "Generate AI draft",
+    summarize: "Summarize",
+    approve: "Approve",
+    discard: "Discard",
+    translate: "Translate",
+    saveAsNewDraft: "Save as new draft",
+    aiNotConfigured: "AI is not configured — add your OpenAI API key",
+    newArticle: "New article",
+    newCategory: "New category",
+    publish: "Publish",
+    unpublish: "Unpublish",
+    articleContent: "Content",
+    articleCategory: "Category",
+    aiDraft: "AI draft",
+    translateTo: "Translate to",
+    aiSummary: "AI summary",
+    connectGmail: "Connect Gmail",
+    connectMicrosoft: "Connect Microsoft",
+    disconnectAccount: "Disconnect",
+    syncNow: "Sync now",
+    emailNotConfigured: "Email provider is not configured",
+    emailEncryptionNotConfigured: "Token encryption is not configured",
+    emailSentVia: "Sent via",
+    emailSavedNotSent: "Saved to thread — not sent",
   },
   de: {
     overview: "Übersicht",
@@ -159,6 +235,44 @@ export const DICTIONARIES: Record<Locale, Dictionary> = {
     assignedTo: "Zugewiesen an",
     backToInbox: "Zurück zum Posteingang",
     backToContacts: "Zurück zu Kontakten",
+    widgetConfig: "Widget-Konfiguration",
+    installSnippet: "Installationscode",
+    needsAttention: "Braucht Aufmerksamkeit",
+    widgetName: "Widget-Name",
+    welcomeMessage: "Willkommensnachricht",
+    brandColor: "Markenfarbe",
+    widgetPosition: "Position",
+    collectName: "Name des Besuchers erfassen",
+    collectEmail: "E-Mail des Besuchers erfassen",
+    greetingMessage: "Begrüßungsnachricht",
+    copySnippet: "Code kopieren",
+    copied: "Kopiert",
+    saveWidgetConfig: "Widget-Einstellungen speichern",
+        talkToHuman: "Mit einem Menschen sprechen",
+    generateAiDraft: "KI-Entwurf erstellen",
+    summarize: "Zusammenfassen",
+    approve: "Genehmigen",
+    discard: "Verwerfen",
+    translate: "Übersetzen",
+    saveAsNewDraft: "Als neuen Entwurf speichern",
+    aiNotConfigured: "KI ist nicht konfiguriert – OpenAI-API-Schlüssel hinzufügen",
+    newArticle: "Neuer Artikel",
+    newCategory: "Neue Kategorie",
+    publish: "Veröffentlichen",
+    unpublish: "Zurückziehen",
+    articleContent: "Inhalt",
+    articleCategory: "Kategorie",
+    aiDraft: "KI-Entwurf",
+    translateTo: "Übersetzen nach",
+    aiSummary: "KI-Zusammenfassung",
+    connectGmail: "Gmail verbinden",
+    connectMicrosoft: "Microsoft verbinden",
+    disconnectAccount: "Verbindung trennen",
+    syncNow: "Jetzt synchronisieren",
+    emailNotConfigured: "E-Mail-Anbieter ist nicht konfiguriert",
+    emailEncryptionNotConfigured: "Token-Verschlüsselung ist nicht konfiguriert",
+    emailSentVia: "Gesendet über",
+    emailSavedNotSent: "Im Thread gespeichert — nicht gesendet",
   },
   fr: {
     overview: "Aperçu",
@@ -198,6 +312,44 @@ export const DICTIONARIES: Record<Locale, Dictionary> = {
     assignedTo: "Attribué à",
     backToInbox: "Retour à la boîte de réception",
     backToContacts: "Retour aux contacts",
+    widgetConfig: "Configuration du widget",
+    installSnippet: "Code d’installation",
+    needsAttention: "Nécessite votre attention",
+    widgetName: "Nom du widget",
+    welcomeMessage: "Message de bienvenue",
+    brandColor: "Couleur de la marque",
+    widgetPosition: "Position",
+    collectName: "Demander le nom du visiteur",
+    collectEmail: "Demander l’e-mail du visiteur",
+    greetingMessage: "Message d’accueil",
+    copySnippet: "Copier le code",
+    copied: "Copié",
+    saveWidgetConfig: "Enregistrer les réglages du widget",
+        talkToHuman: "Parler à un humain",
+    generateAiDraft: "Générer un brouillon IA",
+    summarize: "Résumer",
+    approve: "Approuver",
+    discard: "Écarter",
+    translate: "Traduire",
+    saveAsNewDraft: "Enregistrer comme nouveau brouillon",
+    aiNotConfigured: "L’IA n’est pas configurée — ajoutez votre clé API OpenAI",
+    newArticle: "Nouvel article",
+    newCategory: "Nouvelle catégorie",
+    publish: "Publier",
+    unpublish: "Dépublier",
+    articleContent: "Contenu",
+    articleCategory: "Catégorie",
+    aiDraft: "Brouillon IA",
+    translateTo: "Traduire vers",
+    aiSummary: "Résumé IA",
+    connectGmail: "Connecter Gmail",
+    connectMicrosoft: "Connecter Microsoft",
+    disconnectAccount: "Déconnecter",
+    syncNow: "Synchroniser",
+    emailNotConfigured: "Le fournisseur e-mail n’est pas configuré",
+    emailEncryptionNotConfigured: "Le chiffrement des jetons n’est pas configuré",
+    emailSentVia: "Envoyé via",
+    emailSavedNotSent: "Enregistré dans le fil — non envoyé",
   },
   it: {
     overview: "Panoramica",
@@ -237,6 +389,44 @@ export const DICTIONARIES: Record<Locale, Dictionary> = {
     assignedTo: "Assegnato a",
     backToInbox: "Torna alla posta in arrivo",
     backToContacts: "Torna ai contatti",
+    widgetConfig: "Configurazione del widget",
+    installSnippet: "Snippet di installazione",
+    needsAttention: "Richiede attenzione",
+    widgetName: "Nome del widget",
+    welcomeMessage: "Messaggio di benvenuto",
+    brandColor: "Colore del brand",
+    widgetPosition: "Posizione",
+    collectName: "Raccogli il nome del visitatore",
+    collectEmail: "Raccogli l’email del visitatore",
+    greetingMessage: "Messaggio di saluto",
+    copySnippet: "Copia lo snippet",
+    copied: "Copiato",
+    saveWidgetConfig: "Salva le impostazioni del widget",
+        talkToHuman: "Parla con un operatore",
+    generateAiDraft: "Genera bozza AI",
+    summarize: "Riassumi",
+    approve: "Approva",
+    discard: "Scarta",
+    translate: "Traduci",
+    saveAsNewDraft: "Salva come nuova bozza",
+    aiNotConfigured: "L’IA non è configurata — aggiungi la chiave API OpenAI",
+    newArticle: "Nuovo articolo",
+    newCategory: "Nuova categoria",
+    publish: "Pubblica",
+    unpublish: "Ritira",
+    articleContent: "Contenuto",
+    articleCategory: "Categoria",
+    aiDraft: "Bozza AI",
+    translateTo: "Traduci in",
+    aiSummary: "Riepilogo AI",
+    connectGmail: "Collega Gmail",
+    connectMicrosoft: "Collega Microsoft",
+    disconnectAccount: "Disconnetti",
+    syncNow: "Sincronizza ora",
+    emailNotConfigured: "Il provider email non è configurato",
+    emailEncryptionNotConfigured: "La crittografia dei token non è configurata",
+    emailSentVia: "Inviato tramite",
+    emailSavedNotSent: "Salvato nella conversazione — non inviato",
   },
 };
 

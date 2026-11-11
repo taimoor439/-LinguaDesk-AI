@@ -13,7 +13,10 @@ import {
   AssignForm,
   ReplyForm,
   NoteForm,
+  AiActions,
 } from "./ConversationForms";
+import { isAiConfigured } from "@/lib/ai/openai";
+import { AI_SUMMARY_PREFIX } from "@/lib/ai/grounding";
 
 function formatTime(value: string | null): string {
   if (!value) return "—";
@@ -144,13 +147,17 @@ export default async function ConversationDetailPage({
                   const isNote = message.sender_type === "system";
                   const isAgent = message.sender_type === "agent";
                   const isAi = message.sender_type === "ai";
-                  const author = isNote
-                    ? `Internal note${message.sender_name ? ` by ${message.sender_name}` : ""}`
-                    : isAgent
-                      ? (message.sender_name ?? message.sender_email ?? "Agent")
-                      : isAi
-                        ? "AI draft"
-                        : contactName;
+                  const isAiSummary =
+                    isNote && message.body.startsWith(AI_SUMMARY_PREFIX);
+                  const author = isAiSummary
+                    ? "AI summary"
+                    : isNote
+                      ? `Internal note${message.sender_name ? ` by ${message.sender_name}` : ""}`
+                      : isAgent
+                        ? (message.sender_name ?? message.sender_email ?? "Agent")
+                        : isAi
+                          ? "AI draft"
+                          : contactName;
                   return (
                     <li
                       key={message.id}
@@ -165,7 +172,9 @@ export default async function ConversationDetailPage({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-medium">{author}</span>
                         {isNote ? (
-                          <Badge variant="warning">Internal — team only</Badge>
+                          <Badge variant="warning">
+                            {isAiSummary ? "AI-generated — internal, team only" : "Internal — team only"}
+                          </Badge>
                         ) : null}
                         {message.is_ai_draft ? (
                           <Badge variant="info">Draft — not sent</Badge>
@@ -184,7 +193,8 @@ export default async function ConversationDetailPage({
             )}
           </Card>
 
-          <ReplyForm conversationId={conversation.id} />
+          <AiActions conversationId={conversation.id} aiConfigured={isAiConfigured()} />
+          <ReplyForm conversationId={conversation.id} channel={conversation.channel} />
           <NoteForm conversationId={conversation.id} />
         </div>
 

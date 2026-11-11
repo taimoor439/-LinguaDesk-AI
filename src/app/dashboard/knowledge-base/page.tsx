@@ -1,11 +1,12 @@
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import SetupRequired from "@/components/SetupRequired";
-import { Card, Badge, EmptyState } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 import {
   getCurrentWorkspaceId,
   getKnowledgeBaseArticles,
   getKnowledgeBaseCategories,
 } from "@/lib/db";
+import KnowledgeBaseManager from "./KnowledgeBaseManager";
 
 export default async function KnowledgeBasePage() {
   if (!isSupabaseConfigured()) {
@@ -32,50 +33,26 @@ export default async function KnowledgeBasePage() {
       <h1 className="text-2xl font-semibold">Knowledge Base</h1>
       <p className="text-sm text-gray-500">
         Articles the AI assistant uses to answer customers accurately.
-        Article editing arrives in Phase 4.
+        Only published articles ground AI drafts — draft articles are
+        never fed to the AI.
       </p>
 
-      <Card className="p-4">
-        <h2 className="text-lg font-medium">Categories</h2>
-        {categories.length === 0 ? (
-          <p className="mt-3 text-sm text-gray-500">No categories yet.</p>
-        ) : (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {categories.map((category) => (
-              <Badge key={category.id}>{category.name ?? category.slug ?? "Unnamed"}</Badge>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      <Card className="p-4">
-        <h2 className="text-lg font-medium">Articles</h2>
-        {articles.length === 0 ? (
-          <div className="mt-4">
-            <EmptyState
-              title="No articles yet"
-              description="Create your first article — article editing arrives in Phase 4."
-            />
-          </div>
-        ) : (
-          <ul className="mt-4 divide-y divide-gray-100">
-            {articles.map((article) => (
-              <li key={article.id} className="flex flex-wrap items-center gap-2 py-3">
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{article.title ?? "Untitled article"}</p>
-                  <p className="truncate text-sm text-gray-500">
-                    {article.knowledge_base_categories?.name ?? "No category"}
-                    {article.slug ? ` · /${article.slug}` : ""}
-                  </p>
-                </div>
-                <span className="ml-auto">
-                  <Badge>{article.status}</Badge>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <KnowledgeBaseManager
+        articles={articles.map((article) => ({
+          id: article.id,
+          title: article.title,
+          slug: article.slug,
+          content: article.content,
+          status: article.status,
+          categoryId: article.category_id,
+          categoryName: article.knowledge_base_categories?.name ?? null,
+        }))}
+        categories={categories.map((category) => ({
+          id: category.id,
+          name: category.name,
+          slug: category.slug,
+        }))}
+      />
     </div>
   );
 }

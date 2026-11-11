@@ -39,6 +39,10 @@ export interface ConversationRow {
   last_message_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Phase 5 (migration 0005): which provider owns an email thread. */
+  provider?: string | null;
+  /** Phase 5 (migration 0005): provider thread id (Gmail threadId / Graph conversationId). */
+  provider_thread_id?: string | null;
   contacts: { name: string | null; email: string | null } | null;
 }
 
@@ -178,6 +182,8 @@ export interface MessageRow {
   language: string | null;
   is_ai_draft: boolean;
   created_at: string;
+  /** Phase 5 (migration 0005): provider message id, when the message came from / was sent via a provider. */
+  provider_message_id?: string | null;
   /** Resolved display name of the sender (agent), when known. */
   sender_name: string | null;
   /** Resolved email of the sender (agent), when known. */
@@ -664,7 +670,8 @@ export async function getKnowledgeBaseCategories(
     .from("knowledge_base_categories")
     .select("*")
     .eq("workspace_id", workspaceId)
-    .order("name", { ascending: true });
+    .order("name", { ascending: true })
+    .limit(100);
 
   return { data: asRows<KnowledgeBaseCategoryRow>(data), error: toError(error) };
 }
@@ -683,6 +690,76 @@ export async function getKnowledgeBaseArticles(
     .limit(100);
 
   return { data: asRows<KnowledgeBaseArticleRow>(data), error: toError(error) };
+}
+
+/**
+ * One knowledge-base article, workspace-scoped. Null when it does not
+ * exist here.
+ */
+export async function getKnowledgeBaseArticleById(
+  workspaceId: string,
+  articleId: string,
+): Promise<DbResult<KnowledgeBaseArticleRow | null>> {
+  const supabase = await getClient();
+  if (!supabase) return { data: null, error: NOT_CONFIGURED };
+
+  const { data, error } = await supabase
+    .from("knowledge_base_articles")
+    .select("*, knowledge_base_categories ( name )")
+    .eq("workspace_id", workspaceId)
+    .eq("id", articleId)
+    .maybeSingle();
+
+  return { data: (data as unknown as KnowledgeBaseArticleRow | null) ?? null, error: toError(error) };
+}
+
+/**
+ * One knowledge-base category, workspace-scoped. Null when it does not
+ * exist here.
+ */
+export async function getKnowledgeBaseCategoryById(
+  workspaceId: string,
+  categoryId: string,
+): Promise<DbResult<KnowledgeBaseCategoryRow | null>> {
+  const supabase = await getClient();
+  if (!supabase) return { data: null, error: NOT_CONFIGURED };
+
+  const { data, error } = await supabase
+    .from("knowledge_base_categories")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("id", categoryId)
+    .maybeSingle();
+
+  return { data: (data as unknown as KnowledgeBaseCategoryRow | null) ?? null, error: toError(error) };
+}
+
+export interface GroundingArticleRow {
+  id: string;
+  title: string | null;
+  slug: string | null;
+  content: string | null;
+}
+
+/**
+ * PUBLISHED knowledge-base articles only — the only articles AI
+ * grounding may use. Draft articles are never fed to the model.
+ */
+export async function getPublishedArticlesForGrounding(
+  workspaceId: string,
+): Promise<DbResult<GroundingArticleRow[]>> {
+  const supabase = await getClient();
+  if (!supabase) return { data: [], error: NOT_CONFIGURED };
+
+  const { data, error } = await supabase
+    .from("knowledge_base_articles")
+    .select("id, title, slug, content")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "published")
+    .order("updated_at", { ascending: false })
+    .limit(100);
+
+  return { data: asRows<GroundingArticleRow>(data), error: toError(error) };
 }
 
 export async function getSavedReplies(
@@ -711,7 +788,8 @@ export async function getTeamMembers(
     .from("workspace_members")
     .select("*")
     .eq("workspace_id", workspaceId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .limit(100);
 
   if (error) return { data: [], error: error.message };
 
@@ -743,6 +821,39 @@ export async function getTeamMembers(
   };
 }
 
+export interface ChatNeedsAttention {
+  /** Handoff requests: priority 'high' + status 'pending'. */
+  handoffs: ConversationRow[];
+  /** Open chats with nobody assigned. */
+  unassigned: ConversationRow[];
+}
+
+/**
+ * Chat conversations that need a human: handoff requests plus open
+ * chats with nobody assigned. Honest counts only — no invented data.
+ */
+export async function getChatNeedsAttention(
+  workspaceId: string,
+): Promise<DbResult<ChatNeedsAttention>> {
+  const empty: ChatNeedsAttention = { handoffs: [], unassigned: [] };
+  const { data, error } = await getConversations(workspaceId, {
+    channel: "chat",
+    limit: 100,
+  });
+  if (error) return { data: empty, error };
+  return {
+    data: {
+      handoffs: data.filter(
+        (c) => c.priority === "high" && c.status === "pending",
+      ),
+      unassigned: data.filter(
+        (c) => c.status === "open" && !c.assigned_to,
+      ),
+    },
+    error: null,
+  };
+}
+
 export async function getWidgetConfig(
   workspaceId: string,
 ): Promise<DbResult<WidgetConfigRow | null>> {
@@ -768,7 +879,8 @@ export async function getEmailAccounts(
     .from("email_accounts")
     .select("id, workspace_id, provider, email, status, last_sync_at, created_at, updated_at")
     .eq("workspace_id", workspaceId)
-    .order("provider", { ascending: true });
+    .order("provider", { ascending: true })
+    .limit(10);
 
   return { data: asRows<EmailAccountRow>(data), error: toError(error) };
 }

@@ -1,6 +1,9 @@
 "use server";
 
+import { cookies } from "next/headers";
+import { revalidatePath } from "next/cache";
 import { getUser, createClient } from "./supabase/server";
+import { WORKSPACE_COOKIE } from "./db";
 
 export type Role = "owner" | "admin" | "agent";
 
@@ -73,6 +76,48 @@ export async function getCurrentWorkspace(workspaceId?: string): Promise<Workspa
     return workspaces.find((w) => w.id === workspaceId) ?? workspaces[0];
   }
   return workspaces[0];
+}
+
+export type SwitchWorkspaceResult = { error: string | null };
+
+/**
+ * Switch the active workspace (server action, called from the sidebar).
+ * Only succeeds when the signed-in user is a member of the workspace.
+ * Stores the choice in a cookie so every dashboard page resolves the
+ * same workspace; then revalidates the dashboard layout.
+ */
+export async function switchWorkspace(workspaceId: string): Promise<SwitchWorkspaceResult> {
+  try {
+    const user = await getUser();
+    if (!user) {
+      return { error: "You must be signed in to switch workspaces." };
+    }
+
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (error) return { error: error.message };
+    if (!data) return { error: "You are not a member of that workspace." };
+
+    cookies().set(WORKSPACE_COOKIE, workspaceId, {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365, // 1 year
+      sameSite: "lax",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+    });
+    revalidatePath("/dashboard", "layout");
+    return { error: null };
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Could not switch workspace.",
+    };
+  }
 }
 
 export type CreateWorkspaceResult =

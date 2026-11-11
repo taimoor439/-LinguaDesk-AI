@@ -8,7 +8,8 @@
 import { redirect } from "next/navigation";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { getUser } from "@/lib/supabase/server";
-import { getUserWorkspaces } from "@/lib/workspace";
+import { getUserWorkspaces, switchWorkspace } from "@/lib/workspace";
+import { getCurrentWorkspaceId } from "@/lib/db";
 import SetupRequired from "@/components/SetupRequired";
 import DashboardShell from "@/components/layout/DashboardShell";
 
@@ -31,11 +32,18 @@ export default async function DashboardLayout({
     redirect("/onboarding");
   }
 
+  // Cookie-aware: the workspace picked in the sidebar switcher wins
+  // when the user is still a member of it; otherwise the first workspace.
+  const { data: selectedWorkspaceId } = await getCurrentWorkspaceId();
+  const currentWorkspaceId =
+    selectedWorkspaceId ?? workspaces[0].id;
+
   return (
     <DashboardShell
       userEmail={user.email ?? ""}
       workspaces={workspaces.map((w) => ({ id: w.id, name: w.name }))}
-      currentWorkspaceId={workspaces[0].id}
+      currentWorkspaceId={currentWorkspaceId}
+      onWorkspaceSwitch={switchWorkspace}
     >
       {children}
     </DashboardShell>

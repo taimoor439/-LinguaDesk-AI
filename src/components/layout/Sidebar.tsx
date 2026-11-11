@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import LanguageSelector from "./LanguageSelector";
 import { DICTIONARIES, getStoredLocale } from "@/lib/i18n";
 import type { DictionaryKey, Locale } from "@/lib/i18n";
@@ -145,6 +145,7 @@ export default function Sidebar({
   onClose,
 }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [locale, setLocale] = useState<Locale>("en");
 
   useEffect(() => {
@@ -190,7 +191,14 @@ export default function Sidebar({
         <select
           id="workspace-switcher"
           value={current?.id ?? ""}
-          onChange={(event) => onSwitch?.(event.target.value)}
+          onChange={async (event) => {
+            const nextId = event.target.value;
+            if (!nextId || nextId === current?.id) return;
+            await onSwitch?.(nextId);
+            // The server action sets the workspace cookie; refresh so
+            // every dashboard page re-resolves to the new workspace.
+            router.refresh();
+          }}
           disabled={workspaces.length === 0}
           className="mt-1 w-full rounded-lg border border-slate-700 bg-navy-900 px-3 py-2 text-sm text-white focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-60"
         >

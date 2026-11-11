@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import SetupRequired from "@/components/SetupRequired";
 import { Card, Badge, EmptyState } from "@/components/ui";
@@ -113,25 +114,30 @@ export default async function InboxPage({
         <Card className="p-4">
           <ul className="divide-y divide-gray-100">
             {visible.map((conversation) => (
-              <li key={conversation.id} className="flex flex-wrap items-center gap-2 py-3">
-                <div className="min-w-0">
-                  <p className="truncate font-medium">
-                    {conversation.contacts?.name ??
-                      conversation.contacts?.email ??
-                      "Unknown contact"}
-                  </p>
-                  <p className="truncate text-sm text-gray-500">
-                    {conversation.subject ?? "Untitled conversation"}
-                  </p>
-                </div>
-                <span className="ml-auto flex flex-wrap items-center gap-2">
-                  <Badge>{conversation.channel}</Badge>
-                  <Badge>{conversation.status}</Badge>
-                  <Badge>{conversation.priority}</Badge>
-                  <span className="text-sm text-gray-500">
-                    {formatTime(conversation.last_message_at ?? conversation.created_at)}
+              <li key={conversation.id}>
+                <Link
+                  href={`/dashboard/inbox/${conversation.id}`}
+                  className="flex flex-wrap items-center gap-2 rounded-lg py-3 hover:bg-slate-50"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">
+                      {conversation.contacts?.name ??
+                        conversation.contacts?.email ??
+                        "Unknown contact"}
+                    </p>
+                    <p className="truncate text-sm text-gray-500">
+                      {conversation.subject ?? "Untitled conversation"}
+                    </p>
+                  </div>
+                  <span className="ml-auto flex flex-wrap items-center gap-2">
+                    <Badge>{conversation.channel}</Badge>
+                    <Badge>{conversation.status}</Badge>
+                    <Badge>{conversation.priority}</Badge>
+                    <span className="text-sm text-gray-500">
+                      {formatTime(conversation.last_message_at ?? conversation.created_at)}
+                    </span>
                   </span>
-                </span>
+                </Link>
               </li>
             ))}
           </ul>

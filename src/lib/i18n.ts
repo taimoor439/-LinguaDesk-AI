@@ -58,7 +58,26 @@ export type DictionaryKey =
   | "createWorkspace"
   | "signIn"
   | "signUp"
-  | "welcome";
+  | "welcome"
+  | "assign"
+  | "unassign"
+  | "reply"
+  | "internalNote"
+  | "invite"
+  | "pendingInvitations"
+  | "remove"
+  | "edit"
+  | "delete"
+  | "cancel"
+  | "save"
+  | "create"
+  | "newContact"
+  | "newReply"
+  | "status"
+  | "priority"
+  | "assignedTo"
+  | "backToInbox"
+  | "backToContacts";
 
 export type Dictionary = Record<DictionaryKey, string>;
 
@@ -82,6 +101,25 @@ export const DICTIONARIES: Record<Locale, Dictionary> = {
     signIn: "Sign in",
     signUp: "Sign up",
     welcome: "Welcome",
+    assign: "Assign",
+    unassign: "Unassign",
+    reply: "Reply",
+    internalNote: "Internal note",
+    invite: "Invite",
+    pendingInvitations: "Pending invitations",
+    remove: "Remove",
+    edit: "Edit",
+    delete: "Delete",
+    cancel: "Cancel",
+    save: "Save",
+    create: "Create",
+    newContact: "New contact",
+    newReply: "New saved reply",
+    status: "Status",
+    priority: "Priority",
+    assignedTo: "Assigned to",
+    backToInbox: "Back to inbox",
+    backToContacts: "Back to contacts",
   },
   de: {
     overview: "Übersicht",
@@ -102,6 +140,25 @@ export const DICTIONARIES: Record<Locale, Dictionary> = {
     signIn: "Anmelden",
     signUp: "Registrieren",
     welcome: "Willkommen",
+    assign: "Zuweisen",
+    unassign: "Zuweisung aufheben",
+    reply: "Antworten",
+    internalNote: "Interne Notiz",
+    invite: "Einladen",
+    pendingInvitations: "Ausstehende Einladungen",
+    remove: "Entfernen",
+    edit: "Bearbeiten",
+    delete: "Löschen",
+    cancel: "Abbrechen",
+    save: "Speichern",
+    create: "Erstellen",
+    newContact: "Neuer Kontakt",
+    newReply: "Neue gespeicherte Antwort",
+    status: "Status",
+    priority: "Priorität",
+    assignedTo: "Zugewiesen an",
+    backToInbox: "Zurück zum Posteingang",
+    backToContacts: "Zurück zu Kontakten",
   },
   fr: {
     overview: "Aperçu",
@@ -122,6 +179,25 @@ export const DICTIONARIES: Record<Locale, Dictionary> = {
     signIn: "Se connecter",
     signUp: "S’inscrire",
     welcome: "Bienvenue",
+    assign: "Attribuer",
+    unassign: "Retirer l’attribution",
+    reply: "Répondre",
+    internalNote: "Note interne",
+    invite: "Inviter",
+    pendingInvitations: "Invitations en attente",
+    remove: "Retirer",
+    edit: "Modifier",
+    delete: "Supprimer",
+    cancel: "Annuler",
+    save: "Enregistrer",
+    create: "Créer",
+    newContact: "Nouveau contact",
+    newReply: "Nouvelle réponse enregistrée",
+    status: "Statut",
+    priority: "Priorité",
+    assignedTo: "Attribué à",
+    backToInbox: "Retour à la boîte de réception",
+    backToContacts: "Retour aux contacts",
   },
   it: {
     overview: "Panoramica",
@@ -142,6 +218,25 @@ export const DICTIONARIES: Record<Locale, Dictionary> = {
     signIn: "Accedi",
     signUp: "Registrati",
     welcome: "Benvenuto",
+    assign: "Assegna",
+    unassign: "Rimuovi assegnazione",
+    reply: "Rispondi",
+    internalNote: "Nota interna",
+    invite: "Invita",
+    pendingInvitations: "Inviti in sospeso",
+    remove: "Rimuovi",
+    edit: "Modifica",
+    delete: "Elimina",
+    cancel: "Annulla",
+    save: "Salva",
+    create: "Crea",
+    newContact: "Nuovo contatto",
+    newReply: "Nuova risposta salvata",
+    status: "Stato",
+    priority: "Priorità",
+    assignedTo: "Assegnato a",
+    backToInbox: "Torna alla posta in arrivo",
+    backToContacts: "Torna ai contatti",
   },
 };
 

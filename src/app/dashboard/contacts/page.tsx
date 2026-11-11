@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import SetupRequired from "@/components/SetupRequired";
 import { Card, Badge, EmptyState } from "@/components/ui";
@@ -35,7 +36,15 @@ export default async function ContactsPage({
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Contacts</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Contacts</h1>
+        <Link
+          href="/dashboard/contacts/new"
+          className="inline-block rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700"
+        >
+          New contact
+        </Link>
+      </div>
 
       <form method="get" className="flex flex-col gap-3 sm:flex-row">
         <input
@@ -72,17 +81,22 @@ export default async function ContactsPage({
         <Card className="p-4">
           <ul className="divide-y divide-gray-100">
             {visible.map((contact) => (
-              <li key={contact.id} className="flex flex-wrap items-center gap-2 py-3">
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{contact.name ?? "Unnamed contact"}</p>
-                  <p className="truncate text-sm text-gray-500">
-                    {[contact.email, contact.phone].filter(Boolean).join(" · ") || "No contact details"}
-                  </p>
-                </div>
-                <span className="ml-auto flex flex-wrap items-center gap-2">
-                  {contact.channel ? <Badge>{contact.channel}</Badge> : null}
-                  <Badge>{contact.preferred_language}</Badge>
-                </span>
+              <li key={contact.id}>
+                <Link
+                  href={`/dashboard/contacts/${contact.id}`}
+                  className="flex flex-wrap items-center gap-2 rounded-lg py-3 hover:bg-slate-50"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{contact.name ?? "Unnamed contact"}</p>
+                    <p className="truncate text-sm text-gray-500">
+                      {[contact.email, contact.phone].filter(Boolean).join(" · ") || "No contact details"}
+                    </p>
+                  </div>
+                  <span className="ml-auto flex flex-wrap items-center gap-2">
+                    {contact.channel ? <Badge>{contact.channel}</Badge> : null}
+                    <Badge>{contact.preferred_language}</Badge>
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>

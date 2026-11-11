@@ -1,4 +1,6 @@
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { getAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -17,6 +19,10 @@ export interface DashboardStats {
   openConversations: number;
   pendingConversations: number;
   resolvedConversations: number;
+  /** Conversations resolved in the last 7 days. */
+  resolvedThisWeek: number;
+  /** Open or pending conversations with no one assigned. */
+  unassignedConversations: number;
   totalContacts: number;
 }
 
@@ -162,6 +168,50 @@ export interface AnalyticsData {
   byLanguage: { language: string; count: number }[];
 }
 
+export interface MessageRow {
+  id: string;
+  conversation_id: string;
+  workspace_id: string;
+  sender_type: string;
+  sender_id: string | null;
+  body: string;
+  language: string | null;
+  is_ai_draft: boolean;
+  created_at: string;
+  /** Resolved display name of the sender (agent), when known. */
+  sender_name: string | null;
+  /** Resolved email of the sender (agent), when known. */
+  sender_email: string | null;
+}
+
+export interface TeamInvitationRow {
+  id: string;
+  workspace_id: string;
+  email: string | null;
+  role: string;
+  token: string | null;
+  invited_by: string | null;
+  expires_at: string | null;
+  accepted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Cookie that stores the workspace the user picked in the sidebar. */
+export const WORKSPACE_COOKIE = "linguadesk_workspace_id";
+
+/**
+ * The workspace id the user picked in the sidebar switcher, or null.
+ * Never throws — returns null outside a request context.
+ */
+export function getSelectedWorkspaceId(): string | null {
+  try {
+    return cookies().get(WORKSPACE_COOKIE)?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const NOT_CONFIGURED = "Supabase is not configured.";
 
 async function getClient(): Promise<SupabaseClient | null> {
@@ -181,7 +231,13 @@ function asRows<T>(value: unknown): T[] {
 }
 
 /**
- * The first workspace the signed-in user is a member of.
+ * The workspace the signed-in user is currently working in.
+ *
+ * Resolution order:
+ * 1. The workspace picked in the sidebar switcher (stored in the
+ *    `linguadesk_workspace_id` cookie) — but only if the user is still
+ *    a member of it.
+ * 2. Otherwise the user's first membership (oldest first).
  * Returns null data when there is no signed-in user or no membership.
  */
 export async function getCurrentWorkspaceId(): Promise<DbResult<string | null>> {
@@ -197,13 +253,79 @@ export async function getCurrentWorkspaceId(): Promise<DbResult<string | null>> 
     .from("workspace_members")
     .select("workspace_id")
     .eq("user_id", userData.user.id)
-    .order("created_at", { ascending: true })
-    .limit(1)
+    .order("created_at", { ascending: true });
+
+  if (error) return { data: null, error: error.message };
+  const rows = asRows<{ workspace_id: string }>(data);
+  if (rows.length === 0) return { data: null, error: null };
+
+  const selected = getSelectedWorkspaceId();
+  if (selected && rows.some((row) => row.workspace_id === selected)) {
+    return { data: selected, error: null };
+  }
+  return { data: rows[0].workspace_id, error: null };
+}
+
+/**
+ * The signed-in user's role in a workspace: "owner" | "admin" | "agent".
+ * Returns null when the user is not a member of the workspace.
+ */
+export async function getCurrentUserRole(
+  workspaceId: string,
+): Promise<DbResult<string | null>> {
+  const supabase = await getClient();
+  if (!supabase) return { data: null, error: NOT_CONFIGURED };
+
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user) {
+    return { data: null, error: userError?.message ?? "No signed-in user." };
+  }
+
+  const { data, error } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", userData.user.id)
     .maybeSingle();
 
   if (error) return { data: null, error: error.message };
-  const row = data as unknown as { workspace_id: string } | null;
-  return { data: row?.workspace_id ?? null, error: null };
+  const row = data as unknown as { role: string } | null;
+  return { data: row?.role ?? null, error: null };
+}
+
+/**
+ * Look up profile display info for a list of auth user ids.
+ *
+ * The `profiles` table's RLS only lets a user see their own row, so the
+ * anon client cannot resolve teammates. The service-role client (server
+ * only) is used here, and only for ids already proven to be members of
+ * the caller's workspace. Returns an empty map when the admin client
+ * is unavailable, so callers fall back to showing the user id.
+ */
+export async function getProfilesByIds(
+  userIds: string[],
+): Promise<Map<string, { email: string | null; full_name: string | null; avatar_url: string | null }>> {
+  const empty = new Map<string, { email: string | null; full_name: string | null; avatar_url: string | null }>();
+  const unique = Array.from(new Set(userIds.filter(Boolean)));
+  if (unique.length === 0) return empty;
+
+  const admin = getAdminClient();
+  if (!admin) return empty;
+
+  try {
+    const { data, error } = await admin
+      .from("profiles")
+      .select("id, email, full_name, avatar_url")
+      .in("id", unique);
+    if (error || !data) return empty;
+    const map = new Map<string, { email: string | null; full_name: string | null; avatar_url: string | null }>();
+    for (const p of asRows<{ id: string; email: string | null; full_name: string | null; avatar_url: string | null }>(data)) {
+      map.set(p.id, { email: p.email, full_name: p.full_name, avatar_url: p.avatar_url });
+    }
+    return map;
+  } catch {
+    return empty;
+  }
 }
 
 export async function getWorkspace(
@@ -244,29 +366,52 @@ export async function getDashboardStats(
   workspaceId: string,
 ): Promise<DbResult<DashboardStats>> {
   const supabase = await getClient();
+  const empty: DashboardStats = {
+    totalConversations: 0,
+    openConversations: 0,
+    pendingConversations: 0,
+    resolvedConversations: 0,
+    resolvedThisWeek: 0,
+    unassignedConversations: 0,
+    totalContacts: 0,
+  };
   if (!supabase) {
-    return {
-      data: {
-        totalConversations: 0,
-        openConversations: 0,
-        pendingConversations: 0,
-        resolvedConversations: 0,
-        totalContacts: 0,
-      },
-      error: NOT_CONFIGURED,
-    };
+    return { data: empty, error: NOT_CONFIGURED };
   }
 
-  const [total, open, pending, resolved, contacts] = await Promise.all([
-    countRows(supabase, "conversations", workspaceId),
-    countRows(supabase, "conversations", workspaceId, { status: "open" }),
-    countRows(supabase, "conversations", workspaceId, { status: "pending" }),
-    countRows(supabase, "conversations", workspaceId, { status: "resolved" }),
-    countRows(supabase, "contacts", workspaceId),
-  ]);
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [total, open, pending, resolved, contacts, resolvedWeek, unassigned] =
+    await Promise.all([
+      countRows(supabase, "conversations", workspaceId),
+      countRows(supabase, "conversations", workspaceId, { status: "open" }),
+      countRows(supabase, "conversations", workspaceId, { status: "pending" }),
+      countRows(supabase, "conversations", workspaceId, { status: "resolved" }),
+      countRows(supabase, "contacts", workspaceId),
+      // Resolved in the last 7 days (by last update).
+      supabase
+        .from("conversations")
+        .select("*", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .eq("status", "resolved")
+        .gte("updated_at", sevenDaysAgo),
+      // Open or pending with nobody assigned.
+      supabase
+        .from("conversations")
+        .select("*", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .in("status", ["open", "pending"])
+        .is("assigned_to", null),
+    ]);
 
   const firstError =
-    total.error ?? open.error ?? pending.error ?? resolved.error ?? contacts.error;
+    total.error ??
+    open.error ??
+    pending.error ??
+    resolved.error ??
+    contacts.error ??
+    toError(resolvedWeek.error) ??
+    toError(unassigned.error);
 
   return {
     data: {
@@ -274,6 +419,8 @@ export async function getDashboardStats(
       openConversations: open.count,
       pendingConversations: pending.count,
       resolvedConversations: resolved.count,
+      resolvedThisWeek: resolvedWeek.count ?? 0,
+      unassignedConversations: unassigned.count ?? 0,
       totalContacts: contacts.count,
     },
     error: firstError,
@@ -319,6 +466,176 @@ export async function getConversations(
     .limit(opts?.limit ?? 50);
 
   return { data: asRows<ConversationRow>(data), error: toError(error) };
+}
+
+export interface ConversationDetail extends ConversationRow {
+  /** Resolved display name of the assigned agent, when known. */
+  assignee_name: string | null;
+  /** Resolved email of the assigned agent, when known. */
+  assignee_email: string | null;
+}
+
+/**
+ * One conversation, workspace-scoped. Returns null data when the
+ * conversation does not exist or belongs to another workspace.
+ */
+export async function getConversationById(
+  workspaceId: string,
+  conversationId: string,
+): Promise<DbResult<ConversationDetail | null>> {
+  const supabase = await getClient();
+  if (!supabase) return { data: null, error: NOT_CONFIGURED };
+
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("*, contacts ( name, email )")
+    .eq("workspace_id", workspaceId)
+    .eq("id", conversationId)
+    .maybeSingle();
+
+  if (error) return { data: null, error: error.message };
+  const row = data as unknown as ConversationRow | null;
+  if (!row) return { data: null, error: null };
+
+  let assignee_name: string | null = null;
+  let assignee_email: string | null = null;
+  if (row.assigned_to) {
+    const profiles = await getProfilesByIds([row.assigned_to]);
+    const profile = profiles.get(row.assigned_to);
+    assignee_name = profile?.full_name ?? null;
+    assignee_email = profile?.email ?? null;
+  }
+
+  return { data: { ...row, assignee_name, assignee_email }, error: null };
+}
+
+/**
+ * The full message thread of a conversation, oldest first.
+ * Internal notes (sender_type "system") are included — they are only
+ * ever rendered in the agent dashboard, never to customers.
+ * Agent display names are resolved from profiles where known.
+ */
+export async function getMessages(
+  workspaceId: string,
+  conversationId: string,
+): Promise<DbResult<MessageRow[]>> {
+  const supabase = await getClient();
+  if (!supabase) return { data: [], error: NOT_CONFIGURED };
+
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true })
+    .limit(500);
+
+  if (error) return { data: [], error: error.message };
+
+  const rows = asRows<Omit<MessageRow, "sender_name" | "sender_email">>(data);
+  const senderIds = rows
+    .filter((m) => m.sender_type === "agent" && m.sender_id)
+    .map((m) => m.sender_id as string);
+  const profiles = await getProfilesByIds(senderIds);
+
+  return {
+    data: rows.map((m) => ({
+      ...m,
+      sender_name:
+        m.sender_type === "agent" && m.sender_id
+          ? (profiles.get(m.sender_id)?.full_name ?? null)
+          : null,
+      sender_email:
+        m.sender_type === "agent" && m.sender_id
+          ? (profiles.get(m.sender_id)?.email ?? null)
+          : null,
+    })),
+    error: null,
+  };
+}
+
+/** One contact, workspace-scoped. Null when it does not exist here. */
+export async function getContactById(
+  workspaceId: string,
+  contactId: string,
+): Promise<DbResult<ContactRow | null>> {
+  const supabase = await getClient();
+  if (!supabase) return { data: null, error: NOT_CONFIGURED };
+
+  const { data, error } = await supabase
+    .from("contacts")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("id", contactId)
+    .maybeSingle();
+
+  return { data: (data as unknown as ContactRow | null) ?? null, error: toError(error) };
+}
+
+/** Conversations belonging to one contact, newest first. */
+export async function getContactConversations(
+  workspaceId: string,
+  contactId: string,
+): Promise<DbResult<ConversationRow[]>> {
+  const supabase = await getClient();
+  if (!supabase) return { data: [], error: NOT_CONFIGURED };
+
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("*, contacts ( name, email )")
+    .eq("workspace_id", workspaceId)
+    .eq("contact_id", contactId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  return { data: asRows<ConversationRow>(data), error: toError(error) };
+}
+
+/** One saved reply, workspace-scoped. Null when it does not exist here. */
+export async function getSavedReplyById(
+  workspaceId: string,
+  replyId: string,
+): Promise<DbResult<SavedReplyRow | null>> {
+  const supabase = await getClient();
+  if (!supabase) return { data: null, error: NOT_CONFIGURED };
+
+  const { data, error } = await supabase
+    .from("saved_replies")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("id", replyId)
+    .maybeSingle();
+
+  return { data: (data as unknown as SavedReplyRow | null) ?? null, error: toError(error) };
+}
+
+/**
+ * All invitations for a workspace, pending ones first (not yet accepted
+ * and not expired), then the rest, newest first.
+ */
+export async function getTeamInvitations(
+  workspaceId: string,
+): Promise<DbResult<TeamInvitationRow[]>> {
+  const supabase = await getClient();
+  if (!supabase) return { data: [], error: NOT_CONFIGURED };
+
+  const { data, error } = await supabase
+    .from("team_invitations")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (error) return { data: [], error: error.message };
+
+  const rows = asRows<TeamInvitationRow>(data);
+  const now = Date.now();
+  const isPending = (row: TeamInvitationRow) =>
+    !row.accepted_at && (!row.expires_at || new Date(row.expires_at).getTime() > now);
+  return {
+    data: [...rows.filter(isPending), ...rows.filter((row) => !isPending(row))],
+    error: null,
+  };
 }
 
 export async function getContacts(
@@ -410,17 +727,10 @@ export async function getTeamMembers(
   if (members.length === 0) return { data: [], error: null };
 
   const userIds = members.map((m) => m.user_id);
-  const { data: profiles, error: profilesError } = await supabase
-    .from("profiles")
-    .select("id, email, full_name, avatar_url")
-    .in("id", userIds);
-
-  if (profilesError) return { data: [], error: profilesError.message };
-
-  const byId = new Map<string, { email: string | null; full_name: string | null; avatar_url: string | null }>();
-  for (const p of asRows<{ id: string; email: string | null; full_name: string | null; avatar_url: string | null }>(profiles)) {
-    byId.set(p.id, p);
-  }
+  // Teammates' profiles are not visible through the anon client (profiles
+  // RLS only exposes your own row), so resolve them via the admin client.
+  // Falls back to an empty map when the service-role key is not configured.
+  const byId = await getProfilesByIds(userIds);
 
   return {
     data: members.map((m) => ({

@@ -149,6 +149,9 @@ const WIDGET_SCRIPT = `(function () {
 
     function renderMessages() {
       while (body.childNodes.length > 1) body.removeChild(body.lastChild);
+      /* Once the visitor has sent or received a message the greeting has
+         done its job — hide it so the thread starts with the real chat. */
+      welcomeRow.style.display = messages.length ? "none" : "";
       messages.forEach(function (msg) {
         var mine = msg.sender_type === "customer";
         var bubble = el("div",

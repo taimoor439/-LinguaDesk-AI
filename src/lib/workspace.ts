@@ -127,6 +127,13 @@ export type CreateWorkspaceResult =
 /**
  * Creates a workspace owned by the current user (server action).
  * Never throws — failures are returned as `{ data: null, error }`.
+ *
+ * Creation runs through the SECURITY DEFINER `create_workspace` RPC
+ * (migration 0006): a direct insert cannot work, because the workspaces
+ * INSERT policy requires created_by = auth.uid() and the
+ * workspace_members INSERT policy requires the user to already be a
+ * member — impossible for the first member. The RPC creates the
+ * workspace and its owner membership atomically.
  */
 export async function createWorkspace(name: string): Promise<CreateWorkspaceResult> {
   try {
@@ -143,31 +150,21 @@ export async function createWorkspace(name: string): Promise<CreateWorkspaceResu
     const supabase = await createClient();
     const slug = generateSlug(trimmed);
 
-    const { data: workspace, error: workspaceError } = await supabase
-      .from("workspaces")
-      .insert({ name: trimmed, slug })
-      .select("id, name, slug, created_at")
-      .single();
+    const { data, error } = await supabase.rpc("create_workspace", {
+      p_name: trimmed,
+      p_slug: slug,
+    });
 
-    if (workspaceError || !workspace) {
+    if (error || !data) {
       return {
         data: null,
-        error: workspaceError?.message ?? "Could not create the workspace.",
+        error: error?.message ?? "Could not create the workspace.",
       };
     }
 
-    const created = workspace as unknown as Workspace;
-
-    const { error: memberError } = await supabase.from("workspace_members").insert({
-      workspace_id: created.id,
-      user_id: user.id,
-      role: "owner",
-    });
-
-    if (memberError) {
-      // Roll back the orphaned workspace so a half-created state is not left behind.
-      await supabase.from("workspaces").delete().eq("id", created.id);
-      return { data: null, error: memberError.message };
+    const created = (Array.isArray(data) ? data[0] : data) as unknown as Workspace;
+    if (!created) {
+      return { data: null, error: "Could not create the workspace." };
     }
 
     return { data: created, error: null };

@@ -212,6 +212,60 @@ check(
   rankArticlesForGrounding("xqzwkj bvnmm zzzzz", seedArticles, 3).length === 0,
 );
 
+// Greeting detection + sharp auto-reply prompt (no dead-end replies).
+const { isGreetingMessage, buildAutoReplyPrompt } = compiled(
+  "lib/ai/grounding.js",
+);
+check("isGreetingMessage('hi')", isGreetingMessage("hi") === true);
+check("isGreetingMessage('?')", isGreetingMessage("?") === true);
+check("isGreetingMessage('salam')", isGreetingMessage("salam") === true);
+check(
+  "isGreetingMessage('I want to know about local seo') is false",
+  isGreetingMessage("I want to know about local seo") === false,
+);
+check(
+  "substring ranking: 'seo' matches the JuicedSEO title",
+  rankArticlesForGrounding(
+    "seo",
+    [{ id: "x", title: "About JuicedSEO", slug: "about-x", content: "We are an agency." }],
+    3,
+  ).length === 1,
+);
+const aboutArticle = seedArticles.find((a) => a.slug === "about-juicedseo");
+const greetingPrompt = buildAutoReplyPrompt(
+  "en",
+  [{ sender_type: "customer", body: "hi" }],
+  [],
+  { greeting: true, businessOverview: aboutArticle },
+);
+check(
+  "greeting prompt welcomes instead of dead-ending",
+  greetingPrompt.system.includes("Welcome them warmly") &&
+    !greetingPrompt.system.includes("has no answer") &&
+    greetingPrompt.user.includes("local SEO agency"),
+);
+const noMatchPrompt = buildAutoReplyPrompt(
+  "en",
+  [{ sender_type: "customer", body: "do you do PPC?" }],
+  [],
+  { greeting: false, businessOverview: aboutArticle },
+);
+check(
+  "no-match prompt never says 'no information'",
+  noMatchPrompt.system.includes("Do NOT say the knowledge base has no information") &&
+    !noMatchPrompt.system.includes("say plainly that the knowledge base has no answer"),
+);
+const matchedPrompt = buildAutoReplyPrompt(
+  "en",
+  [{ sender_type: "customer", body: "what SEO services do you offer?" }],
+  rankedServices,
+  { greeting: false },
+);
+check(
+  "matched prompt answers directly from excerpts",
+  matchedPrompt.system.includes("Answer the visitor's question directly"),
+);
+
 // ---------------------------------------------------------------------------
 // 3 + 4. PGlite: migration 0007 + seed SQL (optional — see header).
 // ---------------------------------------------------------------------------
@@ -312,6 +366,16 @@ check("POST route caps auto-reply at 12s", routeSrc.includes("12_000"));
 check(
   "POST route still returns 201 after the auto-reply attempt",
   routeSrc.includes('return jsonResponse({ message: data }, 201);'),
+);
+const createRouteSrc = readFileSync(
+  join(ROOT, "src/app/api/widget/conversations/route.ts"),
+  "utf8",
+);
+check(
+  "conversation-creation route also auto-replies (first message)",
+  createRouteSrc.includes("maybeAutoReply") &&
+    createRouteSrc.includes("runAutoReply(existingId)") &&
+    createRouteSrc.includes("runAutoReply(conversationId)"),
 );
 const configRouteSrc = readFileSync(
   join(ROOT, "src/app/api/widget/config/route.ts"),

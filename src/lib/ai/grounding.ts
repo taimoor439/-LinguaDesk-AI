@@ -52,6 +52,10 @@ export interface RankedArticle extends GroundingArticle {
  * Rank published articles by distinct-word overlap with the query
  * (latest customer message). Title matches count double. Returns the
  * best matches first; articles with score 0 are excluded.
+ *
+ * Substring matches count too: brand names glue words together
+ * ("JuicedSEO"), so the query word "seo" must still match that title.
+ * Exact matches always outrank substring ones.
  */
 export function rankArticlesForGrounding(
   query: string,
@@ -68,12 +72,20 @@ export function rankArticlesForGrounding(
     let score = 0;
     for (const word of queryWords) {
       if (titleWords.has(word)) score += 2;
+      else if (hasSubstringWord(titleWords, word)) score += 1;
       else if (contentWords.has(word)) score += 1;
+      else if (hasSubstringWord(contentWords, word)) score += 1;
     }
     if (score > 0) ranked.push({ ...article, score });
   }
   ranked.sort((a, b) => b.score - a.score);
   return ranked.slice(0, limit);
+}
+
+/** True when `word` is, or contains, one of the words in `words`. */
+function hasSubstringWord(words: Set<string>, word: string): boolean {
+  // No for...of over the Set: the project targets ES5 (see tokenize).
+  return Array.from(words).some((w) => w.includes(word) || word.includes(w));
 }
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -119,6 +131,93 @@ export function buildDraftPrompt(
     `Knowledge-base excerpts:\n${excerpts}\n\n` +
     `Recent conversation (latest last):\n${thread}\n\n` +
     `Draft a reply to the customer's latest message.`;
+  return { system, user };
+}
+
+/** Messages that carry no question: greetings and punctuation-only text. */
+const GREETINGS = new Set([
+  "hi",
+  "hello",
+  "hey",
+  "salam",
+  "salaam",
+  "aoa",
+  "good morning",
+  "good afternoon",
+  "good evening",
+  "assalamualaikum",
+  "assalam o alaikum",
+]);
+
+/**
+ * True when the visitor's message is just a greeting (or punctuation
+ * only) — no question to ground an answer in. "hi", "hello", "?", and
+ * "salam" are greetings; "Hi, I want to know about local SEO" is not.
+ */
+export function isGreetingMessage(text: string): boolean {
+  const cleaned = text
+    .toLowerCase()
+    .replace(/[^a-zà-ÿ ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return true;
+  if (GREETINGS.has(cleaned)) return true;
+  return tokenize(text).length === 0;
+}
+
+export interface AutoReplyPromptOptions {
+  /** The visitor just said hello — welcome them, don't answer a question. */
+  greeting: boolean;
+  /** Business overview article, used when nothing directly matched. */
+  businessOverview?: GroundingArticle | null;
+}
+
+/**
+ * Prompt for the widget's automatic replies. Unlike the dashboard
+ * draft prompt, this one is customer-facing with no human in the loop,
+ * so it must never dead-end the visitor: a greeting gets a warm
+ * welcome plus what the business does, and a question with no direct
+ * match gets a helpful pointer plus a clarifying question — never a
+ * blunt "we have no information" that sends the customer away.
+ * The never-invent-facts rule still holds in every mode.
+ */
+export function buildAutoReplyPrompt(
+  customerLanguage: string,
+  recentMessages: { sender_type: string; body: string }[],
+  matchedArticles: RankedArticle[],
+  options: AutoReplyPromptOptions,
+): { system: string; user: string } {
+  const languageName = LANGUAGE_NAMES[customerLanguage] ?? "English";
+  const thread = recentMessages
+    .map((m) => `${m.sender_type === "customer" ? "Customer" : "Agent"}: ${m.body}`)
+    .join("\n");
+
+  const system =
+    `You answer website visitors for a local business, in ${languageName}. ` +
+    `Answer ONLY using the knowledge-base excerpts below. Do not invent prices, policies, dates, or any other business fact that is not in the excerpts. ` +
+    `Be sharp and confident: short (2-4 sentences), direct, specific — use the business's real facts (services, packages, process, contact). No filler, no hedging, never write "unfortunately". ` +
+    `Always end with one clear next step or a question that moves the visitor forward (for example, ask which service or location they need, or offer the free consultation or free audit). ` +
+    (options.greeting
+      ? `The visitor just said hello. Welcome them warmly in one line, say in one line what the business does (from the excerpts), then ask what they need — name two or three concrete things they can ask about, such as services, packages and pricing, or the free audit. Never say you have no information. `
+      : matchedArticles.length === 0
+        ? `No excerpt directly answers the visitor's question. Do NOT say the knowledge base has no information. Briefly acknowledge what they asked, offer the closest relevant help from the business overview below, ask one specific clarifying question, and mention a human specialist can also help. Keep it warm and short. `
+        : `Answer the visitor's question directly from the excerpts. `) +
+    `Write only the reply itself, no preamble and no explanation of what you did.`;
+
+  const overview = options.businessOverview;
+  const excerpts =
+    matchedArticles.length > 0
+      ? matchedArticles
+          .map((a) => `--- Article: ${a.title ?? "Untitled"}\n${(a.content ?? "").slice(0, 3000)}`)
+          .join("\n\n")
+      : overview
+        ? `--- Business overview: ${overview.title ?? "About the business"}\n${(overview.content ?? "").slice(0, 3000)}`
+        : "(No knowledge-base article is available.)";
+
+  const user =
+    `Knowledge-base excerpts:\n${excerpts}\n\n` +
+    `Recent conversation (latest last):\n${thread}\n\n` +
+    `Reply to the customer's latest message.`;
   return { system, user };
 }
 

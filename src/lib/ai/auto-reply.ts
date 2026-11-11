@@ -5,9 +5,13 @@
  * .ai_auto_reply = true), a new visitor message gets an automatic
  * agent reply, grounded in that workspace's PUBLISHED Knowledge Base
  * articles — the same grounding pipeline as the dashboard AI drafts
- * (rankArticlesForGrounding + buildDraftPrompt), so the model answers
- * only from the workspace's own content and says the knowledge base
- * has no answer (and recommends a human) when nothing matches.
+ * (rankArticlesForGrounding + an auto-reply prompt built for
+ * customer-facing replies), so the model answers only from the
+ * workspace's own content. Replies are sharp and short, always end
+ * with a next step, and never dead-end the visitor: a greeting gets
+ * a warm welcome plus what the business does, and a question with
+ * no direct match gets a helpful pointer plus a clarifying
+ * question — never a blunt "we have no information".
  *
  * This deliberately differs from the dashboard draft flow: the owner
  * opted in per workspace, so the reply is inserted directly as an
@@ -40,7 +44,8 @@ import {
 } from "@/lib/ai/openai";
 import {
   rankArticlesForGrounding,
-  buildDraftPrompt,
+  buildAutoReplyPrompt,
+  isGreetingMessage,
   type GroundingArticle,
 } from "@/lib/ai/grounding";
 
@@ -112,6 +117,20 @@ export async function maybeAutoReply(
       3,
     );
 
+    // A greeting ("hi", "?") has no question to ground, so ranking
+    // would come back empty and the model would dead-end the visitor.
+    // Treat it as a greeting instead, and keep a business overview
+    // handy for the greeting and no-match paths so the model always
+    // has the business's own facts to offer.
+    const allArticles = (articles ?? []) as GroundingArticle[];
+    const greeting = isGreetingMessage(input.customerMessage);
+    const grounded = greeting ? [] : matched;
+    const overview =
+      allArticles.find((a) => (a.slug ?? "").startsWith("about")) ??
+      allArticles.find((a) => (a.title ?? "").toLowerCase().includes("about")) ??
+      allArticles[0] ??
+      null;
+
     // (d) Recent thread context (last 10 messages, oldest first),
     // excluding internal notes and AI drafts so the prompt only sees
     // what the visitor and the agents actually said.
@@ -133,7 +152,10 @@ export async function maybeAutoReply(
       .reverse()
       .map((m) => ({ sender_type: m.sender_type, body: m.body }));
 
-    const { system, user } = buildDraftPrompt(input.language, recent, matched);
+    const { system, user } = buildAutoReplyPrompt(input.language, recent, grounded, {
+      greeting,
+      businessOverview: overview,
+    });
 
     // (e) Ask the model. chatCompletion never throws and returns
     // { data, error }; the timeout keeps the whole attempt inside the

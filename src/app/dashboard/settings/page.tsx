@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import SetupRequired from "@/components/SetupRequired";
+import { isAiConfigured, getAiProviderLabel } from "@/lib/ai/openai";
 import { createClient } from "@/lib/supabase/server";
 import { Card, Badge, EmptyState } from "@/components/ui";
 import {
@@ -49,7 +50,8 @@ export default async function SettingsPage() {
     return <SetupRequired />;
   }
 
-  const openAiConfigured = Boolean(process.env.OPENAI_API_KEY);
+  const aiConfigured = isAiConfigured();
+  const aiProviderLabel = getAiProviderLabel();
 
   const { data: workspaceId } = await getCurrentWorkspaceId();
   if (!workspaceId) {
@@ -165,9 +167,9 @@ export default async function SettingsPage() {
             </dd>
           </div>
           <div className="flex gap-2">
-            <dt className="w-40 text-gray-500">OpenAI</dt>
+            <dt className="w-40 text-gray-500">AI provider ({aiProviderLabel})</dt>
             <dd>
-              <Badge>{openAiConfigured ? "Configured" : "Missing"}</Badge>
+              <Badge>{aiConfigured ? "Configured" : "Missing"}</Badge>
             </dd>
           </div>
           <div className="flex gap-2">

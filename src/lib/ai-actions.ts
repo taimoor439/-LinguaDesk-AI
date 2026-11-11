@@ -11,7 +11,7 @@ import {
 import {
   chatCompletion,
   isAiConfigured,
-  AI_NOT_CONFIGURED_ERROR,
+  getAiNotConfiguredError,
 } from "@/lib/ai/openai";
 import {
   rankArticlesForGrounding,
@@ -25,9 +25,9 @@ import {
  * Phase 4 server actions (AI features).
  *
  * Rules, enforced here and in the UI:
- * - Every action first checks isAiConfigured(). When the OpenAI key is
- *   missing or a placeholder, the action fails with
- *   AI_NOT_CONFIGURED_ERROR — it never fakes a result and never calls
+ * - Every action first checks isAiConfigured(). When the active
+ *   provider's key is missing or a placeholder, the action fails with
+ *   getAiNotConfiguredError() — it never fakes a result and never calls
  *   the live API with a fake key.
  * - Drafts ALWAYS need human approval before anything is sent. Nothing
  *   here auto-sends, auto-publishes, or auto-applies. Approving a draft
@@ -104,7 +104,7 @@ async function loadDraft(
 export async function generateAiDraft(
   conversationId: string,
 ): Promise<ActionResult<{ draftId: string }>> {
-  if (!isAiConfigured()) return fail(AI_NOT_CONFIGURED_ERROR);
+  if (!isAiConfigured()) return fail(getAiNotConfiguredError());
 
   const { context, error } = await requireWorkspace();
   if (!context) return fail(error);
@@ -179,7 +179,7 @@ export async function translateAiDraft(
   draftId: string,
   targetLanguage: string,
 ): Promise<ActionResult<{ translatedText: string; targetLanguage: string }>> {
-  if (!isAiConfigured()) return fail(AI_NOT_CONFIGURED_ERROR);
+  if (!isAiConfigured()) return fail(getAiNotConfiguredError());
   if (!isLanguage(targetLanguage)) {
     return fail("Choose a supported language (en, de, fr, it).");
   }
@@ -261,7 +261,7 @@ export async function saveTranslatedDraft(
 export async function summarizeConversation(
   conversationId: string,
 ): Promise<ActionResult<{ summary: string }>> {
-  if (!isAiConfigured()) return fail(AI_NOT_CONFIGURED_ERROR);
+  if (!isAiConfigured()) return fail(getAiNotConfiguredError());
 
   const { context, error } = await requireWorkspace();
   if (!context) return fail(error);

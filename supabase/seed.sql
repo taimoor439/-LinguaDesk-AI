@@ -1,0 +1,6 @@
+-- LinguaDesk AI — local demo seed pointer.
+--
+-- Do NOT put demo data in this file. To load demo data for local
+-- development only, run supabase/migrations/0002_seed_demo.sql manually
+-- against a throwaway dev project (see the header comment in that file).
+-- Never run it against production.

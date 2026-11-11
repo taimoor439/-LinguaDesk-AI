@@ -115,6 +115,8 @@ export interface WidgetConfigRow {
   collect_name: boolean;
   collect_email: boolean;
   greeting_message: string | null;
+  /** Per-workspace opt-in for AI auto-reply (migration 0007). */
+  ai_auto_reply: boolean;
   created_at: string;
   updated_at: string;
 }

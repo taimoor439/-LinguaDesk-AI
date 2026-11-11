@@ -26,7 +26,14 @@ function SuccessNote({ message }: { message: string | null }) {
 }
 
 /** Edit the workspace's widget config (creates the row if none exists). */
-export function WidgetConfigForm({ widget }: { widget: WidgetConfigRow | null }) {
+export function WidgetConfigForm({
+  widget,
+  aiConfigured,
+}: {
+  widget: WidgetConfigRow | null;
+  /** True when an AI key is configured for the active provider. */
+  aiConfigured: boolean;
+}) {
   const router = useRouter();
   const [locale, setLocale] = useState<Locale>("en");
 
@@ -37,6 +44,7 @@ export function WidgetConfigForm({ widget }: { widget: WidgetConfigRow | null })
   const [position, setPosition] = useState(widget?.position ?? "bottom-right");
   const [collectName, setCollectName] = useState(widget?.collect_name ?? true);
   const [collectEmail, setCollectEmail] = useState(widget?.collect_email ?? true);
+  const [aiAutoReply, setAiAutoReply] = useState(widget?.ai_auto_reply ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -66,6 +74,7 @@ export function WidgetConfigForm({ widget }: { widget: WidgetConfigRow | null })
       collect_name: collectName,
       collect_email: collectEmail,
       greeting_message: greetingMessage.trim() || null,
+      ai_auto_reply: aiAutoReply,
     });
     setSaving(false);
     if (result.error) {
@@ -178,6 +187,30 @@ export function WidgetConfigForm({ widget }: { widget: WidgetConfigRow | null })
           />
           {dict.collectEmail}
         </label>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            checked={aiAutoReply}
+            onChange={(event) => setAiAutoReply(event.target.checked)}
+            className="h-4 w-4"
+          />
+          AI auto-reply
+        </label>
+        <p className="mt-2 text-sm text-gray-500">
+          When on, the AI answers new visitor messages automatically, using
+          only your published Knowledge Base. Needs an AI key configured
+          (Gemini/OpenAI). You can turn it off anytime.
+        </p>
+        {!aiConfigured && (
+          <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            AI is not configured yet — add your Gemini or OpenAI key to the
+            deployment environment before turning this on. The setting will
+            save, but no auto-replies will be sent until then.
+          </p>
+        )}
       </div>
 
       <Button type="submit" loading={saving}>

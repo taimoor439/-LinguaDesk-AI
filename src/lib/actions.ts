@@ -582,6 +582,7 @@ export interface WidgetConfigInput {
   collect_name: boolean;
   collect_email: boolean;
   greeting_message: string | null;
+  ai_auto_reply: boolean;
 }
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -596,6 +597,9 @@ function validateWidgetConfigInput(input: WidgetConfigInput): string | null {
   }
   if (typeof input.collect_name !== "boolean" || typeof input.collect_email !== "boolean") {
     return "Collect name/email must be true or false.";
+  }
+  if (typeof input.ai_auto_reply !== "boolean") {
+    return "AI auto-reply must be true or false.";
   }
   if (input.name && input.name.length > 200) return "Widget name is too long.";
   if (input.welcome_message && input.welcome_message.length > 500) {
@@ -622,20 +626,37 @@ export async function upsertWidgetConfig(
   if (!context) return fail(error);
 
   const supabase = await createClient();
-  const { error: upsertError } = await supabase.from("widget_configs").upsert(
-    {
-      workspace_id: context.workspaceId,
-      name: input.name?.trim() || null,
-      welcome_message: input.welcome_message?.trim() || null,
-      brand_color: input.brand_color,
-      position: input.position,
-      collect_name: input.collect_name,
-      collect_email: input.collect_email,
-      greeting_message: input.greeting_message?.trim() || null,
-    },
-    { onConflict: "workspace_id" },
-  );
-  if (upsertError) return fail(upsertError.message);
+  const basePayload = {
+    workspace_id: context.workspaceId,
+    name: input.name?.trim() || null,
+    welcome_message: input.welcome_message?.trim() || null,
+    brand_color: input.brand_color,
+    position: input.position,
+    collect_name: input.collect_name,
+    collect_email: input.collect_email,
+    greeting_message: input.greeting_message?.trim() || null,
+  };
+  const payload = { ...basePayload, ai_auto_reply: input.ai_auto_reply };
+  const { error: upsertError } = await supabase
+    .from("widget_configs")
+    .upsert(payload, { onConflict: "workspace_id" });
+  if (upsertError) {
+    // The ai_auto_reply column arrives with migration 0007. If the app
+    // is deployed before the migration is applied, retry without it so
+    // the rest of the settings still save — and say so honestly instead
+    // of silently dropping the toggle.
+    if (upsertError.message.includes("ai_auto_reply")) {
+      const { error: retryError } = await supabase
+        .from("widget_configs")
+        .upsert(basePayload, { onConflict: "workspace_id" });
+      if (retryError) return fail(retryError.message);
+      revalidatePath("/dashboard/live-chat");
+      return fail(
+        "Widget settings saved, but AI auto-reply could not be saved yet — the database update for it is still pending. Try again in a few minutes.",
+      );
+    }
+    return fail(upsertError.message);
+  }
 
   revalidatePath("/dashboard/live-chat");
   return ok(null);

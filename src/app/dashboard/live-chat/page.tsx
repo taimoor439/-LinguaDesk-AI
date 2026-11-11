@@ -8,6 +8,7 @@ import {
   getConversations,
   getChatNeedsAttention,
 } from "@/lib/db";
+import { isAiConfigured } from "@/lib/ai/openai";
 import { WidgetConfigForm } from "./WidgetConfigForm";
 import { InstallSnippet } from "./InstallSnippet";
 
@@ -113,6 +114,10 @@ export default async function LiveChatPage() {
               <dt className="w-40 text-gray-500">Greeting message</dt>
               <dd>{widget.greeting_message ?? "—"}</dd>
             </div>
+            <div className="flex gap-2">
+              <dt className="w-40 text-gray-500">AI auto-reply</dt>
+              <dd>{widget.ai_auto_reply ? "On" : "Off"}</dd>
+            </div>
           </dl>
         )}
         {!widget && (
@@ -121,7 +126,7 @@ export default async function LiveChatPage() {
             the install snippet starts working once it exists.
           </p>
         )}
-        <WidgetConfigForm widget={widget} />
+        <WidgetConfigForm widget={widget} aiConfigured={isAiConfigured()} />
       </Card>
 
       <Card className="p-4">

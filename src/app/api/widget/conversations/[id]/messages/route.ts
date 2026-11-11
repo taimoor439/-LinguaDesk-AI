@@ -11,6 +11,7 @@ import {
   validateMessageBody,
   detectLanguage,
 } from "@/lib/widget-api";
+import { maybeAutoReply } from "@/lib/ai/auto-reply";
 
 export const dynamic = "force-dynamic";
 
@@ -172,6 +173,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     p_conversation_id: conversationId,
     p_language: language,
   });
+
+  // Best-effort AI auto-reply (src/lib/ai/auto-reply.ts): when the
+  // workspace opted in (widget_configs.ai_auto_reply), the AI answers
+  // from the workspace's published Knowledge Base. The visitor's
+  // message is already stored, so a slow or failing reply must never
+  // delay or break the 201 below — hard 12s cap, and any outcome
+  // other than a saved reply just means a human replies manually.
+  // maybeAutoReply never throws; the race only bounds its runtime.
+  const autoReply = maybeAutoReply({
+    workspaceId,
+    conversationId,
+    customerMessage: text,
+    language,
+  });
+  const autoReplyTimeout = new Promise<{ replied: false; reason: string }>(
+    (resolve) => setTimeout(() => resolve({ replied: false, reason: "timeout" }), 12_000),
+  );
+  const autoReplyResult = await Promise.race([autoReply, autoReplyTimeout]);
+  if (!autoReplyResult.replied) {
+    console.error("widget auto-reply skipped:", autoReplyResult.reason);
+  }
 
   return jsonResponse({ message: data }, 201);
 }

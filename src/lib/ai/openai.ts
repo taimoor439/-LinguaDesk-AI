@@ -126,7 +126,12 @@ export async function chatCompletion(
         model: getAiModel(),
         messages,
         temperature: opts?.temperature ?? 0.3,
-        max_tokens: opts?.maxTokens ?? 600,
+        // 2048, not 600: on Gemini's OpenAI-compat endpoint the model's
+        // thinking tokens share the max_tokens budget, and a 600 cap
+        // cut replies off mid-sentence (observed 28–87 output tokens).
+        // Replies stay short by prompt instruction; this only gives
+        // the model room to finish its sentences.
+        max_tokens: opts?.maxTokens ?? 2048,
       }),
       signal: controller.signal,
     });

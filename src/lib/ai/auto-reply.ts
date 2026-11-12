@@ -174,7 +174,7 @@ export async function maybeAutoReply(
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      { timeoutMs: AUTO_REPLY_TIMEOUT_MS, maxTokens: 600 },
+      { timeoutMs: AUTO_REPLY_TIMEOUT_MS, maxTokens: 2048 },
     );
     if (aiError || !reply) {
       console.error("widget auto-reply AI call failed:", aiError ?? "empty reply");

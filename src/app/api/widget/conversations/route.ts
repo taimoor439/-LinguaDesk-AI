@@ -88,25 +88,25 @@ export async function POST(request: NextRequest) {
   // Best-effort AI auto-reply (src/lib/ai/auto-reply.ts): same pattern
   // as the follow-up messages route — when the workspace opted in
   // (widget_configs.ai_auto_reply), the AI answers the visitor's
-  // message from the workspace's published Knowledge Base. The message
-  // is already stored, so a slow or failing reply must never delay or
-  // break the 201 below — hard 12s cap, and any outcome other than a
-  // saved reply just means a human replies manually. maybeAutoReply
-  // never throws; the race only bounds its runtime.
-  const runAutoReply = async (targetConversationId: string) => {
-    const autoReply = maybeAutoReply({
+  // message from the workspace's published Knowledge Base. The reply
+  // runs in the BACKGROUND: the visitor's message is already stored,
+  // so the 201 below returns immediately and the reply lands via the
+  // widget's 5s poll whenever it finishes. Blocking the 201 on the
+  // reply used to make slow model calls (Gemini latency varies
+  // 1.5s–24s+) time out and drop the reply entirely — the visitor
+  // just got silence. maybeAutoReply never throws; the .then only
+  // logs the outcome.
+  const runAutoReply = (targetConversationId: string) => {
+    void maybeAutoReply({
       workspaceId,
       conversationId: targetConversationId,
       customerMessage: text,
       language,
+    }).then((autoReplyResult) => {
+      if (!autoReplyResult.replied) {
+        console.error("widget auto-reply skipped:", autoReplyResult.reason);
+      }
     });
-    const autoReplyTimeout = new Promise<{ replied: false; reason: string }>(
-      (resolve) => setTimeout(() => resolve({ replied: false, reason: "timeout" }), 12_000),
-    );
-    const autoReplyResult = await Promise.race([autoReply, autoReplyTimeout]);
-    if (!autoReplyResult.replied) {
-      console.error("widget auto-reply skipped:", autoReplyResult.reason);
-    }
   };
 
   // Returning visitor? Reuse their open chat conversation (and contact).
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
         p_conversation_id: existingId,
         p_language: language,
       });
-      await runAutoReply(existingId);
+      runAutoReply(existingId);
       return jsonResponse({ conversationId: existingId }, 201);
     }
   }
@@ -211,7 +211,7 @@ export async function POST(request: NextRequest) {
     return errorResponse("Could not store the message.", 500);
   }
 
-  await runAutoReply(conversationId);
+  runAutoReply(conversationId);
 
   return jsonResponse({ conversationId }, 201);
 }

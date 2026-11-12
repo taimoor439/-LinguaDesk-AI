@@ -176,24 +176,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   // Best-effort AI auto-reply (src/lib/ai/auto-reply.ts): when the
   // workspace opted in (widget_configs.ai_auto_reply), the AI answers
-  // from the workspace's published Knowledge Base. The visitor's
-  // message is already stored, so a slow or failing reply must never
-  // delay or break the 201 below — hard 12s cap, and any outcome
-  // other than a saved reply just means a human replies manually.
-  // maybeAutoReply never throws; the race only bounds its runtime.
-  const autoReply = maybeAutoReply({
+  // from the workspace's published Knowledge Base. The reply runs in
+  // the BACKGROUND: the visitor's message is already stored, so the
+  // 201 below returns immediately and the reply lands via the
+  // widget's 5s poll whenever it finishes. Blocking the 201 on the
+  // reply used to make slow model calls (Gemini latency varies
+  // 1.5s–24s+) time out and drop the reply entirely — the visitor
+  // just got silence. maybeAutoReply never throws; the .then only
+  // logs the outcome.
+  void maybeAutoReply({
     workspaceId,
     conversationId,
     customerMessage: text,
     language,
+  }).then((autoReplyResult) => {
+    if (!autoReplyResult.replied) {
+      console.error("widget auto-reply skipped:", autoReplyResult.reason);
+    }
   });
-  const autoReplyTimeout = new Promise<{ replied: false; reason: string }>(
-    (resolve) => setTimeout(() => resolve({ replied: false, reason: "timeout" }), 12_000),
-  );
-  const autoReplyResult = await Promise.race([autoReply, autoReplyTimeout]);
-  if (!autoReplyResult.replied) {
-    console.error("widget auto-reply skipped:", autoReplyResult.reason);
-  }
 
   return jsonResponse({ message: data }, 201);
 }

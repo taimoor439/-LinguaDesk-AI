@@ -64,8 +64,16 @@ export interface AutoReplyResult {
   reason: string;
 }
 
-/** Hard cap for the whole auto-reply attempt (model call included). */
-export const AUTO_REPLY_TIMEOUT_MS = 10_000;
+/**
+ * Hard cap for the whole auto-reply attempt (model call included).
+ * Gemini latency varies widely in practice (observed 1.5s on a fast
+ * call, 24s+ on a slow one), so a 10s cap silently dropped replies
+ * whenever the model was slow — the visitor just got silence. The
+ * reply runs in the background now (the caller never waits for it),
+ * so a generous cap costs the visitor nothing: the reply lands via
+ * the widget's 5s poll whenever it finishes.
+ */
+export const AUTO_REPLY_TIMEOUT_MS = 25_000;
 
 export async function maybeAutoReply(
   input: AutoReplyInput,
@@ -158,8 +166,9 @@ export async function maybeAutoReply(
     });
 
     // (e) Ask the model. chatCompletion never throws and returns
-    // { data, error }; the timeout keeps the whole attempt inside the
-    // caller's 12s budget for the visitor's 201 response.
+    // { data, error }; the timeout bounds the background attempt —
+    // the caller never waits for it, so a slow model call delays
+    // the reply, never the visitor's message send.
     const { data: reply, error: aiError } = await chatCompletion(
       [
         { role: "system", content: system },
